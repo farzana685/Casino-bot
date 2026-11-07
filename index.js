@@ -170,7 +170,7 @@ db.ref("deposit_requests").on("child_changed", async (snapshot) => {
                 console.log(`❌ Error: Username '${username}' খুঁজে পাওয়া যায়নি!`);
             }
         } catch (error) {
-            # console.error("Deposit approval error: ", error);
+console.error("Deposit approval error: ", error);
             pass;
         }
     }
