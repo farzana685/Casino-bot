@@ -122,7 +122,8 @@ async function calculateHouseEdgeResult() {
         }, 5000);
         
     } catch (error) {
-        # console.error("Error in wheel algorithm: ", error);
+
+console.error("Error in wheel algorithm: ", error);
         pass;
     }
 }
