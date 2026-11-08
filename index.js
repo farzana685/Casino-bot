@@ -1,10 +1,11 @@
 const admin = require("firebase-admin");
-const serviceAccount = require("./serviceAccountKey.json");
 
-// ফায়ারবেস অ্যাপ ইনিশিয়েলাইজেশন
+// রেন্ডার এনভায়রনমেন্ট ভেরিয়েবল থেকে সরাসরি সিক্রেট কী অবজেক্ট নেওয়া
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: "https://funky-time-3bd0d-default-rtdb.asia-southeast1.firebasedatabase.app"
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://firebasedatabase.app"
 });
 
 const db = admin.database();
@@ -73,12 +74,10 @@ async function calculateHouseEdgeResult() {
             
             totalBetAmount += amount;
             if (selected >= 0 && selected < segments.length) {
-                // পে-আউট = বাজি + (বাজি * মাল্টিপ্লায়ার)
                 expectedPayouts[selected] += (amount * segments[selected].multiplier) + amount;
             }
         }
         
-        // ক্যাসিনো সর্বোচ্চ ৮০% টাকা ফেরত দেবে, ২০% নিজের প্রফিট রাখবে
         const maxAllowedPayout = 0.8 * totalBetAmount;
         let safeWinningIndexes = [];
         
@@ -90,18 +89,14 @@ async function calculateHouseEdgeResult() {
         
         let winningIndex = 0;
         if (safeWinningIndexes.length > 0) {
-            // সেফ অপশনগুলোর মধ্যে থেকে যেকোনো একটি র‍্যান্ডমলি সিলেক্ট হবে
             winningIndex = safeWinningIndexes[Math.floor(Math.random() * safeWinningIndexes.length)];
         } else {
-            // যদি সব অপশনেই লস হওয়ার চান্স থাকে, তবে সবচেয়ে কম লস হওয়া ইনডেক্সটি আসবে
             winningIndex = expectedPayouts.indexOf(Math.min(...expectedPayouts));
         }
         
-        // এই রাউন্ডের আসল প্রফিট হিসাব
         const actualPayout = expectedPayouts[winningIndex];
         const roundProfit = totalBetAmount - actualPayout;
 
-        // ফায়ারবেসে ক্যাসিনোর মোট প্রফিট (House Benefit) আপডেট
         if (totalBetAmount > 0) {
             const profitRef = db.ref("gameState/totalHouseProfit");
             await profitRef.transaction((currentProfit) => {
@@ -110,11 +105,9 @@ async function calculateHouseEdgeResult() {
             console.log(`💰 এই রাউন্ডের প্রফিট: ${roundProfit} টাকা ফায়ারবেসে যোগ হয়েছে।`);
         }
         
-        // উইনিং ইনডেক্স সেট করা
         await db.ref("gameState/winningIndex").set(winningIndex);
         console.log(`🔮 উইনিং ইনডেক্স: ${winningIndex} (${segments[winningIndex].name})`);
         
-        // ৫ সেকেন্ড পর বেটিং বোর্ড পরবর্তী রাউন্ডের জন্য ক্লিয়ার করা
         setTimeout(async () => {
             await db.ref("active_bets").remove();
             await db.ref("gameState/winningIndex").remove();
@@ -122,25 +115,20 @@ async function calculateHouseEdgeResult() {
         }, 5000);
         
     } catch (error) {
-
-console.error("Error in wheel algorithm: ", error);
-        pass;
+        console.error("Error in wheel algorithm: ", error);
     }
 }
 
 // ২. ডিপোজিট রিকোয়েস্ট ও ম্যানুয়াল অ্যাডমিন অ্যাপ্রুভাল সিস্টেম
-// আপনার সিকিউরিটি রুলস অনুযায়ী 'username' এবং 'phone' ম্যাচ করে ব্যালেন্স আপডেট হবে
 db.ref("deposit_requests").on("child_changed", async (snapshot) => {
     const requestId = snapshot.key;
     const requestData = snapshot.val();
 
-    // যখন অ্যাডমিন ফায়ারবেস ড্যাশবোর্ড থেকে status পরিবর্তন করে "approved" লিখে দেবেন
     if (requestData && requestData.status === "approved" && !requestData.processed) {
         const username = requestData.username;
         const depositAmount = parseFloat(requestData.amount) || 0;
 
         try {
-            // ফায়ারবেস 'users' নোড থেকে এই নির্দিষ্ট username-এর UID বা ডাটা খুঁজে বের করা
             const usersSnapshot = await db.ref("users").once("value");
             const users = usersSnapshot.val() || {};
             
@@ -153,13 +141,11 @@ db.ref("deposit_requests").on("child_changed", async (snapshot) => {
             }
 
             if (targetUid) {
-                // প্লেয়ারের ব্যালেন্স আপডেট (Transaction এর মাধ্যমে)
                 const userBalanceRef = db.ref(`users/${targetUid}/balance`);
                 await userBalanceRef.transaction((currentBalance) => {
                     return (currentBalance || 0) + depositAmount;
                 });
 
-                // ডাবল এন্ট্রি ঠেকাতে রিকোয়েস্ট সাকসেস এবং প্রসেসড ট্রু মার্ক করা
                 await db.ref(`deposit_requests/${requestId}`).update({
                     processed: true,
                     status: "success"
@@ -170,8 +156,7 @@ db.ref("deposit_requests").on("child_changed", async (snapshot) => {
                 console.log(`❌ Error: Username '${username}' খুঁজে পাওয়া যায়নি!`);
             }
         } catch (error) {
-console.error("Deposit approval error: ", error);
-            pass;
+            console.error("Deposit approval error: ", error);
         }
     }
 });
